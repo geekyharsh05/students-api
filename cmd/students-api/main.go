@@ -12,6 +12,7 @@ import (
 
 	"github.com/geekyharsh05/students-api/internal/config"
 	"github.com/geekyharsh05/students-api/internal/http/handlers/student"
+	"github.com/geekyharsh05/students-api/internal/storage/sqlite"
 )
 
 func main() {
@@ -19,16 +20,24 @@ func main() {
 	cfg := config.MustLoad()
 
 	// setup database
+	storage, err := sqlite.New(cfg)
+
+	slog.Info("Storage initialized successfully", slog.String("env", cfg.Env))
+
+	if err != nil {
+		log.Fatal("Failed to setup database", slog.String("error", err.Error()))
+	}
 
 	// setup router
 	router := http.NewServeMux()
-	router.HandleFunc("GET /api/students", student.New())
+	router.HandleFunc("POST /api/students", student.New(storage))
 
 	// setup server
 	server := http.Server{
 		Addr:    cfg.HTTPServer.Address,
 		Handler: router,
 	}
+	
 	slog.Info("Starting server", slog.String("address", cfg.HTTPServer.Address))
 
 	done := make(chan os.Signal, 1)
@@ -49,7 +58,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := server.Shutdown(ctx)
+	err = server.Shutdown(ctx)
 
 	if err != nil {
 		slog.Error("Failed to shutdown the server gracefully", slog.String("error", err.Error()))
