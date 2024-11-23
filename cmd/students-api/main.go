@@ -1,11 +1,17 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
+	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/geekyharsh05/students-api/internal/config"
+	"github.com/geekyharsh05/students-api/internal/http/handlers/student"
 )
 
 func main() {
@@ -16,21 +22,38 @@ func main() {
 
 	// setup router
 	router := http.NewServeMux()
-	router.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Welcome to students api"))
-	})
+	router.HandleFunc("GET /api/students", student.New())
 
 	// setup server
 	server := http.Server{
-		Addr:    cfg.Address,
+		Addr:    cfg.HTTPServer.Address,
 		Handler: router,
 	}
+	slog.Info("Starting server", slog.String("address", cfg.HTTPServer.Address))
 
-	fmt.Printf("Server started on port http://%s\n", cfg.Address)
+	done := make(chan os.Signal, 1)
 
-	err := server.ListenAndServe()
+	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil {
+			log.Fatal("Failed To Start Server")
+		}
+	}()
+
+	<-done
+
+	slog.Info("Shutting down the server")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := server.Shutdown(ctx)
+
 	if err != nil {
-		log.Fatal("Failed To Start Server")
+		slog.Error("Failed to shutdown the server gracefully", slog.String("error", err.Error()))
 	}
 
+	slog.Info("Server shutdown successfully")
 }
